@@ -104,7 +104,7 @@ bool UtilsDumpLowlevelIl(const LowLevelILInstruction& instr) {
 	if (instr.operation == LLIL_REG) {
 
 		LogInfo("\t%s ", magic_enum::enum_name(instr.operation).data());
-		auto Reg = instr.GetSourceRegister()
+		auto Reg = instr.GetSourceRegister();
 		return true;
 	}
 

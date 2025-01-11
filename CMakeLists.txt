@@ -41,3 +41,10 @@ add_library(${PROJECT_NAME} SHARED main.cpp core.cpp core.h utils.h utils.cpp)
 target_link_libraries(${PROJECT_NAME} PUBLIC binaryninjaapi)
 
 bn_install_plugin(${PROJECT_NAME})
+
+if (WIN32)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/build/Release/binjareframework.dll"
+        "%appdata%/Binary Ninja/plugins/")
+endif()
