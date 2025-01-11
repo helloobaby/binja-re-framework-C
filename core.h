@@ -20,28 +20,31 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#ifndef TESTPLUGIN_LIBRARY_H
+#define TESTPLUGIN_LIBRARY_H
 
-#include "library.h"
 #include "binaryninjaapi.h"
 
+#endif //TESTPLUGIN_LIBRARY_H
+
 using namespace BinaryNinja;
+extern BinaryView* g_bv;
 
-extern "C"
-{
-	BN_DECLARE_CORE_ABI_VERSION
 
-	BINARYNINJAPLUGIN bool CorePluginInit()
-	{
-		PluginCommand::Register("Test Plugin\\Test", "It's a test action!", [](BinaryView* view) {
-			for (auto& symbol: view->GetSymbols())
-			{
-				LogInfo("%s", symbol->GetFullName().c_str());
-			}
-		});
-		return true;
-	}
+// 清理这个BasicBlock,NopAddressLists包含不需要的指令地址,返回剩余的指令字节DataBuffer
+// 
+DataBuffer CleanBlock(uint64_t Start, uint64_t End, std::vector<uint64_t> NopAddressLists);
 
-	BINARYNINJAPLUGIN void CorePluginDependencies()
-	{
-	}
-}
+class CFGLink {
+public:
+	CFGLink(BasicBlock* Cur_BasicBlock ,BasicBlock* True_BasicBlock, BasicBlock* False_BasicBlock = nullptr , std::string JccType = "");
+	bool Is_Uncond() { return False_BasicBlock == nullptr; }
+	bool Is_Cond() { return !Is_Uncond(); }
+	DataBuffer GenAsm(uint64_t BaseAddress);
+private:
+	BasicBlock* Cur_BasicBlock;
+	BasicBlock* True_BasicBlock;
+	BasicBlock* False_BasicBlock;
+	std::string jcc_type;
+};
+
