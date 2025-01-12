@@ -20,14 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-
-#include "core.h"
-#include "binaryninjaapi.h"
-#include <lowlevelilinstruction.h>
-#include "utils.h"
-#include "include/magic_enum/magic_enum.hpp"
-#include <exception>
-
+#include "examples.h"
 
 using namespace BinaryNinja;
 
@@ -35,9 +28,11 @@ extern "C"
 {
 	extern "C" 
 	{ 
-		BINARYNINJAPLUGIN uint32_t CorePluginABIVersion() { 
-			//return BN_CURRENT_CORE_ABI_VERSION; 
-			return 86;
+		// [Default] This plugin was built for a newer version of Binary Ninja (XX). 
+		// Please update Binary Ninja or rebuild the plugin with the matching API version (XX).
+
+		BINARYNINJAPLUGIN uint32_t CorePluginABIVersion() {  
+			return 83;
 		} 
 	}
 
@@ -46,7 +41,16 @@ extern "C"
 		PluginCommand::Register("Solve", "", [](BinaryView* bv) {
 			// Init Codes
 			g_bv = bv;
+			LogToFile(InfoLog, "binjareframework.log");
+			LogToFile(ErrorLog, "binjareframework.log");
 
+			try {
+				Solve_CallPop();
+			}
+			catch (const std::exception& e) {
+				LogError("Exception : %s", e.what());
+				UtilsShowTraceStack(nullptr);
+			}
 
 		});
 
@@ -67,11 +71,9 @@ extern "C"
 					return;
 				}
 
+				// https://github.com/Vector35/binaryninja-api/blob/49bafa9cd9c0301235e806e0f868cf16cdaac405/examples/llil_parser/src/llil_parser.cpp
 				for (auto LLIL_BB : LLILFunction->GetBasicBlocks()) {
 					LogInfo("LLIL_BB Start %d End %d Length %d", LLIL_BB->GetStart(), LLIL_BB->GetEnd(), LLIL_BB->GetLength());
-
-					// 通过上面的Start End Length 搭配 LLILFunction->GetInstruction(i)
-					// 可以遍历当前BasicBlock里的LLIL
 					
 				}
 
@@ -79,7 +81,7 @@ extern "C"
 				for (auto i = 0; i < LLILFunction->GetInstructionCount(); i++) {
 					LLIL_Instr = LLILFunction->GetInstruction(i);
 					if(LLIL_Instr)
-						UtilsDumpLowlevelIl(LLIL_Instr.value());
+						UtilsDumpLowlevelIl(LLIL_Instr.value(),0);
 					else {
 						LogError("LLILFunction->GetInstruction(%d) fail",i);
 					}

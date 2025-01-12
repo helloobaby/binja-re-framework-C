@@ -23,6 +23,12 @@ std::optional<LowLevelILInstruction> UtilsGetLowLevelIlAt(uint64_t Addr) {
 }
 
 std::vector<InstructionTextToken> UtilsGetDisassemblyTextAt(uint64_t Addr) {
+	// Check
+	if (g_bv->GetBasicBlocksForAddress(Addr).empty()) {
+		// 一般来说不会出现这种情况,除非那个函数太大/复杂或者其他原因未被分析
+		return{};
+	}
+
 	auto BasicBlock = g_bv->GetBasicBlocksForAddress(Addr)[0];
 	auto t = BasicBlock->GetDisassemblyText(new DisassemblySettings());
 	auto find = std::find_if(t.begin(), t.end(), [&](DisassemblyTextLine TextLine) {
@@ -51,14 +57,14 @@ std::string hex(DataBuffer Buffer) {
 void UtilsShowTraceStack(char* szBriefInfo /*= NULL*/)
 {
 #define STACK_INFO_LEN  1024
-#define MAXSHORT 12
-	void* pStack[MAXSHORT];
-	static char szStackInfo[STACK_INFO_LEN * MAXSHORT];
+#define Depth 12
+	void* pStack[Depth];
+	static char szStackInfo[STACK_INFO_LEN * Depth];
 	static char szFrameInfo[STACK_INFO_LEN];
 
 	HANDLE process = GetCurrentProcess();
 	SymInitialize(process, NULL, TRUE);
-	WORD frames = CaptureStackBackTrace(0, MAXSHORT, pStack, NULL);
+	WORD frames = CaptureStackBackTrace(0, Depth, pStack, NULL);
 	strcpy(szStackInfo, szBriefInfo == NULL ? "Stack Traceback:\n" : szBriefInfo);
 
 	for (WORD i = 0; i < frames; ++i) {
@@ -76,7 +82,7 @@ void UtilsShowTraceStack(char* szBriefInfo /*= NULL*/)
 
 		if (SymFromAddr(process, address, &displacementSym, pSymbol) && SymGetLineFromAddr64(process, address, &displacementLine, &line))
 		{
-			snprintf(szFrameInfo, sizeof(szFrameInfo), "\t%s() at %s:%d(0x%x)\n", pSymbol->Name, line.FileName, line.LineNumber, pSymbol->Address);
+			snprintf(szFrameInfo, sizeof(szFrameInfo), "\t%s() at %s:%d(0x%p)\n", pSymbol->Name, line.FileName, line.LineNumber, pSymbol->Address);
 		}
 		else
 		{
@@ -99,20 +105,32 @@ std::string UtilsGetJmpType(uint64_t BaseAddress, uint64_t DestAddress) {
 	}
 }
 
-bool UtilsDumpLowlevelIl(const LowLevelILInstruction& instr) {
+void UtilsDumpLowlevelIl(const LowLevelILInstruction& instr, int depth) {
 	LogInfo("instr(%d) Operation %s",instr.instructionIndex ,magic_enum::enum_name(instr.operation).data());
-	if (instr.operation == LLIL_REG) {
-
-		LogInfo("\t%s ", magic_enum::enum_name(instr.operation).data());
+	if (depth > 8) {
+		LogError("Recursive reach max depth ! ");
+		return;
+	}
+	switch (instr.operation)
+	{
+	case LLIL_CONST:
+	case LLIL_CONST_PTR:
+	case LLIL_EXTERN_PTR:
+		LogInfo("\t%s %llx", magic_enum::enum_name(instr.operation).data(), instr.GetConstant());
+		return;
+	case LLIL_REG: {
 		auto Reg = instr.GetSourceRegister();
-		return true;
+		LogInfo("\t%s %s", magic_enum::enum_name(instr.operation).data(), g_bv->GetDefaultArchitecture()->GetRegisterName(Reg).c_str());
+		return;
+		}
+	default:
+		break;
 	}
 
-	if (instr.operation == LLIL_CONST || instr.operation  == LLIL_CONST_PTR || instr.operation == LLIL_EXTERN_PTR) {
-		LogInfo("\t%s %llx", magic_enum::enum_name(instr.operation).data(),instr.GetConstant());
-		return true;
+	for (int i = 0; i < instr.GetOperands().size(); i++) {
+		auto Operand = instr.GetRawOperandAsExpr(i);
+		UtilsDumpLowlevelIl(Operand,depth++);
 	}
-
-	//instr.VisitExprs(UtilsDumpLowlevelIl);
-	return true;
+	
+	return;
 }
