@@ -32,7 +32,7 @@ extern "C"
 		// Please update Binary Ninja or rebuild the plugin with the matching API version (XX).
 
 		BINARYNINJAPLUGIN uint32_t CorePluginABIVersion() {  
-			return 83;
+			return 87;
 		} 
 	}
 
@@ -45,7 +45,11 @@ extern "C"
 			LogToFile(ErrorLog, "binjareframework.log");
 
 			try {
-				Solve_CallPop();
+				//Solve_CallPop();
+				//Solve_Jmp_ConstantPtr();
+				//Solve_Push_Ret();
+				//Solve_Jmp_ConstantPtr2();
+				Solve_Call_ConstantPtr();
 			}
 			catch (const std::exception& e) {
 				LogError("Exception : %s", e.what());
