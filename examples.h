@@ -159,7 +159,7 @@ std::optional<T> get_possiable_value(Ref<MediumLevelILFunction> Func, const Medi
 		auto ssa_def = Func->GetInstruction(index_ssa_def);
 
 		// Op必须是赋值
-		if (ssa_def.operation != MLIL_SET_VAR_SSA && ssa_def.operation == MLIL_SET_VAR_ALIASED) {
+		if (ssa_def.operation != MLIL_SET_VAR_SSA && ssa_def.operation != MLIL_SET_VAR_ALIASED) {
 			LogDebug("[%s] ssa_def.operation %s invalid ", __FUNCTION__, magic_enum::enum_name(ssa_def.operation).data());
 			return std::nullopt;
 		}
@@ -174,14 +174,14 @@ std::optional<T> get_possiable_value(Ref<MediumLevelILFunction> Func, const Medi
 		}
 
 		if (source_operation != MLIL_ADD && source_operation != MLIL_SUB && source_operation != MLIL_XOR && source_operation != MLIL_MUL && source_operation != MLIL_AND
-			&& source_operation != MLIL_VAR_SSA && source_operation != MLIL_VAR_ALIASED) {
+			&& source_operation != MLIL_VAR_SSA && source_operation != MLIL_VAR_ALIASED && source_operation != MLIL_CONST) {
 			LogDebug("[%s] source_operation %s invalid", __FUNCTION__, magic_enum::enum_name(source_operation).data());
 			return std::nullopt;
 		}
 		auto op_count = source.GetOperands().size();
 		LogDebug("[%s] op_count %d", __FUNCTION__, op_count);
 		if (op_count == 1) {
-			return get_possiable_value<T>(Func,source.GetRawOperandAsExpr(0));
+			return get_possiable_value<T>(Func,source);
 		}
 		else if (op_count == 2) {
 			auto left = get_possiable_value<T>(Func, source.GetRawOperandAsExpr(0));
@@ -245,6 +245,8 @@ void Solve_Jmp_ConstantPtr2() {
 		LogInfo("[Solve_Jmp_ConstantPtr2] Solve %s", Func->GetSymbol()->GetFullName().c_str());
 		Func->SetAnalysisSkipOverride(NeverSkipFunctionAnalysis);
 		auto MFunc = Func->GetMediumLevelIL();
+		if (!MFunc)
+			continue;
 		auto BBList = MFunc->GetBasicBlocks();
 		for (const auto& BB : BBList) {
 			auto EndIndex = BB->GetEnd();
@@ -254,7 +256,8 @@ void Solve_Jmp_ConstantPtr2() {
 				auto Dest = get_possiable_value<int>(MFunc->GetSSAForm(), Terminator.GetSSAForm().GetDestExpr());
 				if (Dest) {
 					// 目的地确定
-					LogInfo("[Solve_Jmp_ConstantPtr2] Get Constant %llx", 0);
+					LogInfo("[Solve_Jmp_ConstantPtr2] Get Constant %llx", *Dest);
+					break;
 				}
 			}
 		}
@@ -274,24 +277,40 @@ void Solve_Call_ConstantPtr() {
 	for (auto Func : g_bv->GetAnalysisFunctionList()) {
 		LogInfo("[Solve_Call_ConstantPtr] Solve %s", Func->GetSymbol()->GetFullName().c_str());
 		Func->SetAnalysisSkipOverride(NeverSkipFunctionAnalysis);
-		auto MFunc = Func->GetMediumLevelIL()->GetSSAForm();
+		auto MFunc = Func->GetMediumLevelIL();
+		if (!MFunc)
+			continue;
+		MFunc = MFunc->GetSSAForm();
 		auto BBList = MFunc->GetBasicBlocks();
 		for (const auto& BB : BBList) {
 			auto EndIndex = BB->GetEnd();
 			for (int i = 0; i < EndIndex; i++) {
 				auto Inst = MFunc->GetInstruction(i);
-				//LogDebug("[Solve_Call_ConstantPtr] Operation %s", magic_enum::enum_name(Inst.operation).data());
-				if (Inst.operation == MLIL_CALL_UNTYPED_SSA && Inst.GetDestExpr().operation == MLIL_VAR_SSA) {
+				LogDebug("[Solve_Call_ConstantPtr] Operation %s", magic_enum::enum_name(Inst.operation).data());
+				if ((Inst.operation == MLIL_CALL_UNTYPED_SSA || Inst.operation == MLIL_CALL_SSA) && Inst.GetDestExpr().operation == MLIL_VAR_SSA) {
 					LogInfo("[Solve_Call_ConstantPtr] Get %s", Inst.Dump());
 					auto Dest = get_possiable_value<int>(MFunc->GetSSAForm(), Inst.GetDestExpr());
 					if (Dest) {
 						// 目的地确定
-						LogInfo("[Solve_Call_ConstantPtr] Get Constant %llx", 0);
-						continue;
+						LogInfo("[Solve_Call_ConstantPtr] Get Constant %llx", *Dest);
+						DataBuffer Buf;
+						Buf = g_bv->ReadBuffer(*Dest, 1);
+						if (Buf[0] >=0x50 && Buf[0] <= 0x5a) {
+							LogInfo("Can Patch to Jmp");
+							std::string error;
+							if (g_bv->GetDefaultArchitecture()->Assemble(fmt::format("jmp {} {}", UtilsGetJmpType(Inst.address, *Dest), *Dest), Inst.address, Buf, error)) {
+								if (Buf.GetLength() == 2) {
+									g_bv->ConvertToNop(g_bv->GetDefaultArchitecture(), Inst.address);
+									g_bv->ConvertToNop(g_bv->GetDefaultArchitecture(), *Dest);
+									g_bv->WriteBuffer(Inst.address, Buf);
+								}
+							}
+						}
+						break;
 					}
 				}
 			}
 		}
-		break;
+		//break;
 	}
 }

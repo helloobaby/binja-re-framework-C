@@ -32,31 +32,15 @@ extern "C"
 		// Please update Binary Ninja or rebuild the plugin with the matching API version (XX).
 
 		BINARYNINJAPLUGIN uint32_t CorePluginABIVersion() {  
-			return 87;
+			return 83;
 		} 
 	}
 
 	BINARYNINJAPLUGIN bool CorePluginInit() 
 	{
-		PluginCommand::Register("Solve", "", [](BinaryView* bv) {
-			// Init Codes
-			g_bv = bv;
-			LogToFile(InfoLog, "binjareframework.log");
-			LogToFile(ErrorLog, "binjareframework.log");
-
-			try {
-				//Solve_CallPop();
-				//Solve_Jmp_ConstantPtr();
-				//Solve_Push_Ret();
-				//Solve_Jmp_ConstantPtr2();
-				Solve_Call_ConstantPtr();
-			}
-			catch (const std::exception& e) {
-				LogError("Exception : %s", e.what());
-				UtilsShowTraceStack(nullptr);
-			}
-
-		});
+		EasyRegisterWrapper(Solve_CallPop, "Solve_CallPop");
+		EasyRegisterWrapper(Solve_Push_Ret, "Solve_Push_Ret");
+		EasyRegisterWrapper(Solve_Call_ConstantPtr, "Solve_Call_ConstantPtr");
 
 		PluginCommand::Register("Print LowLevel IL For Address", "", [](BinaryView* bv) {
 			try {
