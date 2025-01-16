@@ -25,4 +25,4 @@ std::string UtilsGetJmpType(uint64_t BaseAddress,uint64_t DestAddress);
 // 打印Lowlevel IL,用来辅助调试
 void UtilsDumpLowlevelIl(const LowLevelILInstruction& instr, int depth);
 
-void EasyRegisterWrapper(std::function<void(void)> f, std::string name);
+void EasyRegisterWrapper(std::function<void(std::vector<uint64_t> DebugFunctionList)> f, std::string name, std::vector<uint64_t> DebugFunctionList);

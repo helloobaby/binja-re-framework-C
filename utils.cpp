@@ -135,13 +135,13 @@ void UtilsDumpLowlevelIl(const LowLevelILInstruction& instr, int depth) {
 	return;
 }
 
-void EasyRegisterWrapper(std::function<void(void)> f,std::string name) {
+void EasyRegisterWrapper(std::function<void(std::vector<uint64_t> DebugFunctionList)> f, std::string name, std::vector<uint64_t> DebugFunctionList) {
 	PluginCommand::Register(name, "", [=](BinaryView* bv) {
 		g_bv = bv;
 		LogToFile(InfoLog, "binjareframework.log");
 		LogToFile(ErrorLog, "binjareframework.log");
 		try {
-			f();
+			f(DebugFunctionList);
 		}
 		catch (const std::exception& e) {
 			LogError("Exception : %s", e.what());

@@ -32,53 +32,17 @@ extern "C"
 		// Please update Binary Ninja or rebuild the plugin with the matching API version (XX).
 
 		BINARYNINJAPLUGIN uint32_t CorePluginABIVersion() {  
-			return 83;
+			return 87;
 		} 
 	}
 
 	BINARYNINJAPLUGIN bool CorePluginInit() 
 	{
-		EasyRegisterWrapper(Solve_CallPop, "Solve_CallPop");
-		EasyRegisterWrapper(Solve_Push_Ret, "Solve_Push_Ret");
-		EasyRegisterWrapper(Solve_Call_ConstantPtr, "Solve_Call_ConstantPtr");
+		EasyRegisterWrapper(Solve_CallPop, "Solve_CallPop", {  });
+		EasyRegisterWrapper(Solve_Push_Ret, "Solve_Push_Ret", {  });
+		EasyRegisterWrapper(Solve_Call_ConstantPtr, "Solve_Call_ConstantPtr", {  });
+		EasyRegisterWrapper(Solve_Jmp_ConstantPtr_myalgo, "Solve_Jmp_ConstantPtr_myalgo", {  });
 
-		PluginCommand::Register("Print LowLevel IL For Address", "", [](BinaryView* bv) {
-			try {
-				g_bv = bv;
-
-				uint64_t TestAddress = UtilsGetAddressInput();
-				auto Functions = bv->GetAnalysisFunctionsContainingAddress(TestAddress);
-				if (Functions.size() != 1) {
-					LogWarn("Functions size is %d", Functions.size());
-					return;
-				}
-				auto LLILFunction = Functions[0]->GetLowLevelIL();
-				auto LLIL_Instr = UtilsGetLowLevelIlAt(TestAddress);
-				if (!LLIL_Instr) {
-					LogError("UtilsGetLowLevelIlAt fail  %llx", TestAddress);
-					return;
-				}
-
-				// https://github.com/Vector35/binaryninja-api/blob/49bafa9cd9c0301235e806e0f868cf16cdaac405/examples/llil_parser/src/llil_parser.cpp
-				for (auto LLIL_BB : LLILFunction->GetBasicBlocks()) {
-					LogInfo("LLIL_BB Start %d End %d Length %d", LLIL_BB->GetStart(), LLIL_BB->GetEnd(), LLIL_BB->GetLength());
-					
-				}
-
-				// 打印每条Lowlevel IL指令
-				for (auto i = 0; i < LLILFunction->GetInstructionCount(); i++) {
-					LLIL_Instr = LLILFunction->GetInstruction(i);
-					if(LLIL_Instr)
-						UtilsDumpLowlevelIl(LLIL_Instr.value(),0);
-					else {
-						LogError("LLILFunction->GetInstruction(%d) fail",i);
-					}
-				}
-			}
-			catch (const std::exception& e) {
-				LogError("Exception %s", e.what());
-				UtilsShowTraceStack(nullptr);
-			}});
 
 		PluginCommand::Register("CFGLink Test", "", [](BinaryView* bv) {
 			g_bv = bv;
@@ -132,21 +96,44 @@ extern "C"
 			}
 			});
 
-		PluginCommand::Register("CleanBlock In BasicBlock For Address", "", [](BinaryView* bv) {
-			g_bv = bv;
+		PluginCommand::Register("Print LowLevel IL For Address (DEBUG)", "", [](BinaryView* bv) {
+			try {
+				g_bv = bv;
 
-			uint64_t Result;
-			bv->GetAddressInput(Result, "Input BasicBlock Start Address", "Info");
-			auto BasicBlocks = bv->GetBasicBlocksForAddress(Result);
-			LogInfo("GetBasicBlocksForAddress return %d", BasicBlocks.size());
-			auto BasicBlock = BasicBlocks[0];
-			auto Buffer = CleanBlock(BasicBlock->GetStart(), BasicBlock->GetEnd(), {});
-			// https://gchq.github.io/CyberChef/#recipe=From_Base64('A-Za-z0-9%2B/%3D',true,false)To_Hex('Space',0)Disassemble_x86('32','Full%20x86%20architecture',16,0,true,true)&ieol=CRLF&oeol=CRLF
-			LogInfo("CleanBlock return %s", hex(Buffer).c_str());
+				uint64_t TestAddress = UtilsGetAddressInput();
+				auto Functions = bv->GetAnalysisFunctionsContainingAddress(TestAddress);
+				if (Functions.size() != 1) {
+					LogWarn("Functions size is %d", Functions.size());
+					return;
+				}
+				auto LLILFunction = Functions[0]->GetLowLevelIL();
+				auto LLIL_Instr = UtilsGetLowLevelIlAt(TestAddress);
+				if (!LLIL_Instr) {
+					LogError("UtilsGetLowLevelIlAt fail  %llx", TestAddress);
+					return;
+				}
+
+				// https://github.com/Vector35/binaryninja-api/blob/49bafa9cd9c0301235e806e0f868cf16cdaac405/examples/llil_parser/src/llil_parser.cpp
+				for (auto LLIL_BB : LLILFunction->GetBasicBlocks()) {
+					LogInfo("LLIL_BB Start %d End %d Length %d", LLIL_BB->GetStart(), LLIL_BB->GetEnd(), LLIL_BB->GetLength());
+					
+				}
+
+				// 打印每条Lowlevel IL指令
+				for (auto i = 0; i < LLILFunction->GetInstructionCount(); i++) {
+					LLIL_Instr = LLILFunction->GetInstruction(i);
+					if(LLIL_Instr)
+						UtilsDumpLowlevelIl(LLIL_Instr.value(),0);
+					else {
+						LogError("LLILFunction->GetInstruction(%d) fail",i);
+					}
+				}
 			}
-		);
-
-		PluginCommand::Register("Print DisassemblyText Token For Address", "", [](BinaryView* bv) {
+			catch (const std::exception& e) {
+				LogError("Exception %s", e.what());
+				UtilsShowTraceStack(nullptr);
+			}});
+		PluginCommand::Register("Print DisassemblyText Token For Address (DEBUG)", "", [](BinaryView* bv) {
 			g_bv = bv;
 
 			uint64_t Result;

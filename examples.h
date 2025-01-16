@@ -7,13 +7,24 @@
 #include "include/magic_enum/magic_enum.hpp"
 #include <exception>
 #include <dbghelp.h>
+#include <vector>
 using namespace BinaryNinja;
 extern BinaryView* g_bv;
 
 //10001096  e800000000         call    $ + 5  {data_1000109b}
 //1000109b  5f                 pop     edi						-> mov edi,0x1000109b
-void Solve_CallPop() {
-	for (auto Func : g_bv->GetAnalysisFunctionList()) {
+void Solve_CallPop(std::vector<uint64_t> DebugFunctionList) {
+	std::vector<Ref<Function>> DefaultFunctionList;
+	if (DebugFunctionList.size()) {
+		for (auto Addr : DebugFunctionList) {
+			auto t = g_bv->GetAnalysisFunctionsContainingAddress(Addr);
+			DefaultFunctionList.insert(DefaultFunctionList.end(),t.cbegin(), t.cend());
+		}
+	}
+	else {
+		DefaultFunctionList = g_bv->GetAnalysisFunctionList();
+	}
+	for (auto& Func : DefaultFunctionList) {
 		LogInfo("[Solve_CallPop] Solve %s", Func->GetSymbol()->GetFullName().c_str());
 		Func->SetAnalysisSkipOverride(NeverSkipFunctionAnalysis);
 		// https://github.com/Vector35/binaryninja-api/issues/5124
@@ -42,9 +53,6 @@ void Solve_CallPop() {
 							LogInfo("[Solve_CallPop] %s", hex(Buf).c_str());
 							g_bv->WriteBuffer(DisTokenList[i].addr, Buf);
 						}
-						else {
-							LogError("[Solve_CallPop] Error 1 , {:#x}", DisTokenList[i].addr);
-						}
 					}
 				}
 			}
@@ -55,35 +63,45 @@ void Solve_CallPop() {
 
 //1000255d  push    edi {var_8}
 //1000255e  retn    反编译看到ret直接认为函数到末尾停止分析了,需要Patch成为Jmp
-void Solve_Push_Ret() {
-	for (auto Func : g_bv->GetAnalysisFunctionList()) {
+void Solve_Push_Ret(std::vector<uint64_t> DebugFunctionList) {
+	std::vector<Ref<Function>> DefaultFunctionList;
+	if (DebugFunctionList.size()) {
+		for (auto Addr : DebugFunctionList) {
+			auto t = g_bv->GetAnalysisFunctionsContainingAddress(Addr);
+			DefaultFunctionList.insert(DefaultFunctionList.end(), t.cbegin(), t.cend());
+		}
+	}
+	else {
+		DefaultFunctionList = g_bv->GetAnalysisFunctionList();
+	}
+	for (auto Func : DefaultFunctionList) {
 		LogInfo("[Solve_Push_Ret] Solve %s", Func->GetSymbol()->GetFullName().c_str());
 		auto BBList = Func->GetBasicBlocks();
 		for (const auto& BB : BBList) {
 			const auto& DisTokenList = BB->GetDisassemblyText(new DisassemblySettings());
 			for (int i = 0; i < DisTokenList.size(); i++) {
 				if (i == (DisTokenList.size() - 1))
-					continue;
-				if (BB->GetDisassemblyText(new DisassemblySettings()).size() < 2)
-					continue;
-				uint64_t TerminatorAddr = BB->GetDisassemblyText(new DisassemblySettings()).back().addr;
+					break;
+				if (DisTokenList.size() < 2)
+					break;
+				uint64_t TerminatorAddr = DisTokenList.back().addr;
 				DataBuffer Buf = g_bv->ReadBuffer(TerminatorAddr, 1);
 				// ret
 				if (Buf[0] == 0xC3 ) {
-					auto addr = BB->GetDisassemblyText(new DisassemblySettings())[BB->GetDisassemblyText(new DisassemblySettings()).size() - 2].addr;
-					DataBuffer Opcode = g_bv->ReadBuffer(addr, 1);
+					DataBuffer Opcode = g_bv->ReadBuffer(TerminatorAddr - 1, 1);
+					// push eax -> push edi
 					if (Opcode[0] >= 0x50 && Opcode[0] <= 0x57) {
-						LogInfo("[Solve_Push_Ret] Get %llx", addr);
-						auto reg = BB->GetDisassemblyText(new DisassemblySettings())[BB->GetDisassemblyText(new DisassemblySettings()).size() - 2].tokens[3].text;
+						LogInfo("[Solve_Push_Ret] Get %llx", TerminatorAddr - 1);
+						auto reg = DisTokenList[DisTokenList.size() - 2].tokens[3].text;
 						std::string error;
 						DataBuffer Buf;
 						g_bv->GetDefaultArchitecture()->Assemble(fmt::format("jmp {}", reg), 0, Buf, error);
 						if (Buf.GetLength() == 2) {
-							g_bv->ConvertToNop(g_bv->GetDefaultArchitecture(), addr);
-							g_bv->ConvertToNop(g_bv->GetDefaultArchitecture(), addr + 1);
-							g_bv->WriteBuffer(addr, Buf);
+							g_bv->ConvertToNop(g_bv->GetDefaultArchitecture(), TerminatorAddr);
+							g_bv->ConvertToNop(g_bv->GetDefaultArchitecture(), TerminatorAddr - 1);
+							g_bv->WriteBuffer(TerminatorAddr, Buf);
 							// 迭代下一个BasicBlock
-							continue;
+							break;
 						}
 					}
 				}
@@ -169,12 +187,34 @@ std::optional<T> get_possiable_value(Ref<MediumLevelILFunction> Func, const Medi
 		LogDebug("[%s] ssa_def %s operation %s , source_operation %s", __FUNCTION__, ssa_def.Dump(), magic_enum::enum_name(ssa_def.operation).data(), magic_enum::enum_name(source_operation).data());
 
 		// 从堆栈中读取
+		//16 @ 1004e523[arg2#0 - 0x18].d = 0xc0 @ mem#1->mem#3
+		//17 @ 1004e53a  eax_2#3 = [arg3#0].d @ mem#3              -> var
 		if (source_operation == MLIL_LOAD_SSA) {
-
+			auto operand = source.GetRawOperandAsExpr(0);
+			if (operand.operation == MLIL_VAR_SSA) {
+				size_t search_end = ssa_def.GetSSAInstructionIndex();
+				auto cur_bb = Func->GetBasicBlockForInstruction(search_end);
+				if (cur_bb) {
+					for (size_t i = cur_bb->GetStart(); i < search_end; i++) {
+						auto instr = Func->GetInstruction(i);
+						if (instr.operation == MLIL_STORE_SSA) {
+							auto src = instr.GetSourceExpr();
+							if (src.operation == MLIL_CONST || src.operation == MLIL_CONST_PTR) {
+								auto guess_value = src.GetConstant();
+								LogDebug("MLIL_LOAD_SSA guess constant %llx", guess_value);
+								if (guess_value < 0xff && guess_value > 0)
+									return guess_value;
+							}
+						}
+					}
+				}
+			}
+			else
+				return std::nullopt;
 		}
 
 		if (source_operation != MLIL_ADD && source_operation != MLIL_SUB && source_operation != MLIL_XOR && source_operation != MLIL_MUL && source_operation != MLIL_AND
-			&& source_operation != MLIL_VAR_SSA && source_operation != MLIL_VAR_ALIASED && source_operation != MLIL_CONST) {
+			&& source_operation != MLIL_VAR_SSA && source_operation != MLIL_VAR_ALIASED && source_operation != MLIL_CONST && source_operation != MLIL_CONST_PTR) {
 			LogDebug("[%s] source_operation %s invalid", __FUNCTION__, magic_enum::enum_name(source_operation).data());
 			return std::nullopt;
 		}
@@ -235,13 +275,23 @@ void Solve_Jmp_ConstantPtr() {
 				}
 			}
 		}
-		//break;
+		break;
 	}
 }
 
 // 利用自己写的数据流分析算法做优化
-void Solve_Jmp_ConstantPtr2() {
-	for (auto Func : g_bv->GetAnalysisFunctionList()) {
+void Solve_Jmp_ConstantPtr_myalgo(std::vector<uint64_t> DebugFunctionList) {
+	std::vector<Ref<Function>> DefaultFunctionList;
+	if (DebugFunctionList.size()) {
+		for (auto Addr : DebugFunctionList) {
+			auto t = g_bv->GetAnalysisFunctionsContainingAddress(Addr);
+			DefaultFunctionList.insert(DefaultFunctionList.end(), t.cbegin(), t.cend());
+		}
+	}
+	else {
+		DefaultFunctionList = g_bv->GetAnalysisFunctionList();
+	}
+	for (auto Func : DefaultFunctionList) {
 		LogInfo("[Solve_Jmp_ConstantPtr2] Solve %s", Func->GetSymbol()->GetFullName().c_str());
 		Func->SetAnalysisSkipOverride(NeverSkipFunctionAnalysis);
 		auto MFunc = Func->GetMediumLevelIL();
@@ -251,17 +301,24 @@ void Solve_Jmp_ConstantPtr2() {
 		for (const auto& BB : BBList) {
 			auto EndIndex = BB->GetEnd();
 			auto Terminator = MFunc->GetInstruction(EndIndex - 1);
-			if (Terminator.operation == MLIL_JUMP) {
+			if (Terminator.operation == MLIL_JUMP || Terminator.operation == MLIL_JUMP_TO) {
 				LogInfo("[Solve_Jmp_ConstantPtr2] Get %llx", BB->GetDisassemblyText(new DisassemblySettings()).back().addr);
 				auto Dest = get_possiable_value<int>(MFunc->GetSSAForm(), Terminator.GetSSAForm().GetDestExpr());
 				if (Dest) {
 					// 目的地确定
 					LogInfo("[Solve_Jmp_ConstantPtr2] Get Constant %llx", *Dest);
+					DataBuffer Buf;
+					std::string error;
+					if (g_bv->GetDefaultArchitecture()->Assemble(fmt::format("jmp {} {}", UtilsGetJmpType(Terminator.address, *Dest), *Dest), Terminator.address, Buf, error)) {
+						if (Buf.GetLength() == 2) {
+							g_bv->ConvertToNop(g_bv->GetDefaultArchitecture(), Terminator.address);
+							g_bv->WriteBuffer(Terminator.address, Buf);
+						}
+					}
 					break;
 				}
 			}
 		}
-		break;
 	}
 }
 
@@ -273,8 +330,18 @@ void Solve_Jmp_ConstantPtr2() {
 //52 @ 1001110b  void* ebx_3 = &data_10011101 + edx_3
 //53 @ 1001110d[ebp_1 - 0x14].d = 0xc4
 //❓  54 @ 10011114  jump(ebx_3)
-void Solve_Call_ConstantPtr() {
-	for (auto Func : g_bv->GetAnalysisFunctionList()) {
+void Solve_Call_ConstantPtr(std::vector<uint64_t> DebugFunctionList) {
+	std::vector<Ref<Function>> DefaultFunctionList;
+	if (DebugFunctionList.size()) {
+		for (auto Addr : DebugFunctionList) {
+			auto t = g_bv->GetAnalysisFunctionsContainingAddress(Addr);
+			DefaultFunctionList.insert(DefaultFunctionList.end(), t.cbegin(), t.cend());
+		}
+	}
+	else {
+		DefaultFunctionList = g_bv->GetAnalysisFunctionList();
+	}
+	for (auto Func : DefaultFunctionList) {
 		LogInfo("[Solve_Call_ConstantPtr] Solve %s", Func->GetSymbol()->GetFullName().c_str());
 		Func->SetAnalysisSkipOverride(NeverSkipFunctionAnalysis);
 		auto MFunc = Func->GetMediumLevelIL();
@@ -288,14 +355,16 @@ void Solve_Call_ConstantPtr() {
 				auto Inst = MFunc->GetInstruction(i);
 				LogDebug("[Solve_Call_ConstantPtr] Operation %s", magic_enum::enum_name(Inst.operation).data());
 				if ((Inst.operation == MLIL_CALL_UNTYPED_SSA || Inst.operation == MLIL_CALL_SSA) && Inst.GetDestExpr().operation == MLIL_VAR_SSA) {
-					LogInfo("[Solve_Call_ConstantPtr] Get %s", Inst.Dump());
+					//LogInfo("[Solve_Call_ConstantPtr] Get %s", Inst.Dump());
 					auto Dest = get_possiable_value<int>(MFunc->GetSSAForm(), Inst.GetDestExpr());
 					if (Dest) {
 						// 目的地确定
 						LogInfo("[Solve_Call_ConstantPtr] Get Constant %llx", *Dest);
 						DataBuffer Buf;
 						Buf = g_bv->ReadBuffer(*Dest, 1);
-						if (Buf[0] >=0x50 && Buf[0] <= 0x5a) {
+						// pop eax -> pop edi
+						// 只能通过opcode判断,因为binaryninja还没分析这个目的地,无法用一些汇编tokens啥的判断
+						if (Buf[0] >=0x58 && Buf[0] <= 0x5f) {
 							LogInfo("Can Patch to Jmp");
 							std::string error;
 							if (g_bv->GetDefaultArchitecture()->Assemble(fmt::format("jmp {} {}", UtilsGetJmpType(Inst.address, *Dest), *Dest), Inst.address, Buf, error)) {
@@ -311,6 +380,5 @@ void Solve_Call_ConstantPtr() {
 				}
 			}
 		}
-		//break;
 	}
 }
