@@ -8,8 +8,10 @@
 #pragma comment(lib,"DbgHelp.Lib")
 
 uint64_t UtilsGetAddressInput() {
-	uint64_t Result;
-	g_bv->GetAddressInput(Result, "Input Address", "Info");
+	uint64_t Result = 0;
+	if (g_bv) {
+		g_bv->GetAddressInput(Result, "Input Address", "Info");
+	}
 	return Result;
 }
 
@@ -138,8 +140,8 @@ void UtilsDumpLowlevelIl(const LowLevelILInstruction& instr, int depth) {
 void EasyRegisterWrapper(std::function<void(std::vector<uint64_t> DebugFunctionList)> f, std::string name, std::vector<uint64_t> DebugFunctionList) {
 	PluginCommand::Register(name, "", [=](BinaryView* bv) {
 		g_bv = bv;
-		LogToFile(InfoLog, "binjareframework.log");
-		LogToFile(ErrorLog, "binjareframework.log");
+		LogToFile(InfoLog, "binjareframework-info.log");
+		LogToFile(ErrorLog, "binjareframework-error.log");
 		try {
 			f(DebugFunctionList);
 		}

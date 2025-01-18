@@ -109,6 +109,7 @@ void Solve_Push_Ret(std::vector<uint64_t> DebugFunctionList) {
 		}
 	}
 }
+
 template<typename T>
 T simplifyAddInst(T a,T b) {
 	return a+b;
@@ -191,22 +192,46 @@ std::optional<T> get_possiable_value(Ref<MediumLevelILFunction> Func, const Medi
 		//17 @ 1004e53a  eax_2#3 = [arg3#0].d @ mem#3              -> var
 		if (source_operation == MLIL_LOAD_SSA) {
 			auto operand = source.GetRawOperandAsExpr(0);
-			if (operand.operation == MLIL_VAR_SSA) {
+			LogDebug("[get_possiable_value] Get LOAD_SSA Operation %s", magic_enum::enum_name(operand.operation).data());
+			if (operand.operation == MLIL_VAR_SSA/* || operand.operation == MLIL_VAR_PHI*/) {
 				size_t search_end = ssa_def.GetSSAInstructionIndex();
 				auto cur_bb = Func->GetBasicBlockForInstruction(search_end);
 				if (cur_bb) {
+					// 有两种情况,一种是MLIL会优化到变量,一种是无法优化
+					//  286 @ 10001537  var_1c @ mem#26 -> mem#27 = 0xf
+					for (size_t i = cur_bb->GetStart(); i < search_end; i++) {
+						auto instr = Func->GetInstruction(i);
+						if (instr.operation == MLIL_SET_VAR_ALIASED) {
+							auto dest = instr.GetDestSSAVariable();
+							auto name = Func->GetFunction()->GetVariableName(dest.var);
+							if (std::string(name).find("var_1c") != std::string::npos) {
+								auto src = instr.GetSourceExpr();
+								if (src.operation == MLIL_CONST || src.operation == MLIL_CONST_PTR) {
+									auto guess_value = src.GetConstant();
+									LogInfo("guess constant method1 %llx", guess_value);
+									if (guess_value < 0xff && guess_value > 0)
+										return guess_value;
+								}
+							}
+						}
+					}
+
+					//  10001537  mov     dword [ebp-0x18 {var_1c}], 0xf  -> 
 					for (size_t i = cur_bb->GetStart(); i < search_end; i++) {
 						auto instr = Func->GetInstruction(i);
 						if (instr.operation == MLIL_STORE_SSA) {
 							auto src = instr.GetSourceExpr();
 							if (src.operation == MLIL_CONST || src.operation == MLIL_CONST_PTR) {
 								auto guess_value = src.GetConstant();
-								LogDebug("MLIL_LOAD_SSA guess constant %llx", guess_value);
+								LogInfo("guess constant method2 %llx", guess_value);
 								if (guess_value < 0xff && guess_value > 0)
 									return guess_value;
 							}
 						}
 					}
+				}
+				else {
+					LogDebug("CantFind cur_bb");
 				}
 			}
 			else
@@ -292,7 +317,7 @@ void Solve_Jmp_ConstantPtr_myalgo(std::vector<uint64_t> DebugFunctionList) {
 		DefaultFunctionList = g_bv->GetAnalysisFunctionList();
 	}
 	for (auto Func : DefaultFunctionList) {
-		LogInfo("[Solve_Jmp_ConstantPtr2] Solve %s", Func->GetSymbol()->GetFullName().c_str());
+		LogInfo("[Solve_Jmp_ConstantPtr_myalgo] Solve %s", Func->GetSymbol()->GetFullName().c_str());
 		Func->SetAnalysisSkipOverride(NeverSkipFunctionAnalysis);
 		auto MFunc = Func->GetMediumLevelIL();
 		if (!MFunc)
@@ -302,11 +327,11 @@ void Solve_Jmp_ConstantPtr_myalgo(std::vector<uint64_t> DebugFunctionList) {
 			auto EndIndex = BB->GetEnd();
 			auto Terminator = MFunc->GetInstruction(EndIndex - 1);
 			if (Terminator.operation == MLIL_JUMP || Terminator.operation == MLIL_JUMP_TO) {
-				LogInfo("[Solve_Jmp_ConstantPtr2] Get %llx", BB->GetDisassemblyText(new DisassemblySettings()).back().addr);
+				LogInfo("[Solve_Jmp_ConstantPtr_myalgo] Get %llx", BB->GetDisassemblyText(new DisassemblySettings()).back().addr);
 				auto Dest = get_possiable_value<int>(MFunc->GetSSAForm(), Terminator.GetSSAForm().GetDestExpr());
 				if (Dest) {
 					// 目的地确定
-					LogInfo("[Solve_Jmp_ConstantPtr2] Get Constant %llx", *Dest);
+					LogInfo("[Solve_Jmp_ConstantPtr_myalgo] Get Constant %llx", *Dest);
 					DataBuffer Buf;
 					std::string error;
 					if (g_bv->GetDefaultArchitecture()->Assemble(fmt::format("jmp {} {}", UtilsGetJmpType(Terminator.address, *Dest), *Dest), Terminator.address, Buf, error)) {
@@ -315,7 +340,8 @@ void Solve_Jmp_ConstantPtr_myalgo(std::vector<uint64_t> DebugFunctionList) {
 							g_bv->WriteBuffer(Terminator.address, Buf);
 						}
 					}
-					break;
+					// 迭代下一个BasicBlock
+					continue;
 				}
 			}
 		}
@@ -350,12 +376,12 @@ void Solve_Call_ConstantPtr(std::vector<uint64_t> DebugFunctionList) {
 		MFunc = MFunc->GetSSAForm();
 		auto BBList = MFunc->GetBasicBlocks();
 		for (const auto& BB : BBList) {
-			auto EndIndex = BB->GetEnd();
-			for (int i = 0; i < EndIndex; i++) {
+			//auto EndIndex = BB->GetEnd();
+			for (int i = BB->GetStart(); i < BB->GetEnd(); i++) {
 				auto Inst = MFunc->GetInstruction(i);
-				LogDebug("[Solve_Call_ConstantPtr] Operation %s", magic_enum::enum_name(Inst.operation).data());
-				if ((Inst.operation == MLIL_CALL_UNTYPED_SSA || Inst.operation == MLIL_CALL_SSA) && Inst.GetDestExpr().operation == MLIL_VAR_SSA) {
-					//LogInfo("[Solve_Call_ConstantPtr] Get %s", Inst.Dump());
+				LogDebug("[Solve_Call_ConstantPtr] %d Operation %s",i, magic_enum::enum_name(Inst.operation).data());
+				if ((Inst.operation == MLIL_CALL_UNTYPED_SSA || Inst.operation == MLIL_CALL_SSA)/* && Inst.GetDestExpr().operation == MLIL_VAR_SSA*/) {
+					LogDebug("[Solve_Call_ConstantPtr] Get %s", Inst.Dump());
 					auto Dest = get_possiable_value<int>(MFunc->GetSSAForm(), Inst.GetDestExpr());
 					if (Dest) {
 						// 目的地确定
@@ -381,4 +407,88 @@ void Solve_Call_ConstantPtr(std::vector<uint64_t> DebugFunctionList) {
 			}
 		}
 	}
+}
+//.text:10001E36                 jnb     short near ptr loc_10001E45 + 4
+//.text:10001E38                 jb      short near ptr loc_10001E45 + 4
+void Solve_Unreachable_Jcc(std::vector<uint64_t> DebugFunctionList) {
+	std::vector<Ref<Function>> DefaultFunctionList;
+	if (DebugFunctionList.size()) {
+		for (auto Addr : DebugFunctionList) {
+			auto t = g_bv->GetAnalysisFunctionsContainingAddress(Addr);
+			DefaultFunctionList.insert(DefaultFunctionList.end(), t.cbegin(), t.cend());
+		}
+	}
+	else {
+		DefaultFunctionList = g_bv->GetAnalysisFunctionList();
+	}
+	for (auto& Func : DefaultFunctionList) {
+		LogInfo("[Solve_Unreachable_Jcc] Solve %s", Func->GetSymbol()->GetFullName().c_str());
+		Func->SetAnalysisSkipOverride(NeverSkipFunctionAnalysis);
+		auto BBList = Func->GetBasicBlocks();
+		for (const auto& BB : BBList) {
+			auto OutgoingEdges = BB->GetOutgoingEdges();
+			if (OutgoingEdges.size() != 2) {
+				continue;
+			}
+			auto False_BB = std::find_if(OutgoingEdges.begin(), OutgoingEdges.end(), [](BasicBlockEdge e) {
+				if (e.type == FalseBranch)
+					return true;
+				else
+					return false;
+				});
+			auto True_BB_Cur = std::find_if(OutgoingEdges.begin(), OutgoingEdges.end(), [](BasicBlockEdge e) {
+				if (e.type == TrueBranch)
+					return true;
+				else
+					return false;
+				});
+			if (False_BB == OutgoingEdges.end() || True_BB_Cur == OutgoingEdges.end()) {
+				LogError("[Solve_Unreachable_Jcc] Error 1 %llx", BB->GetStart());
+				continue;
+			}
+			auto OutgoingEdges_Next = False_BB->target->GetOutgoingEdges();
+			if (OutgoingEdges_Next.size() != 2) {
+				continue;
+			}
+
+			auto True_BB = std::find_if(OutgoingEdges_Next.begin(), OutgoingEdges_Next.end(), [](BasicBlockEdge e) {
+				if (e.type == TrueBranch)
+					return true;
+				else
+					return false;
+				});
+			if (True_BB == OutgoingEdges_Next.end()) {
+				LogError("[Solve_Unreachable_Jcc] Error 2 %llx", BB->GetStart());
+				continue;
+			}
+			if (True_BB->target->GetStart() == True_BB_Cur->target->GetStart()) {
+				LogInfo("[Solve_Unreachable_Jcc] Get %llx", BB->GetStart());
+				g_bv->AlwaysBranch(g_bv->GetDefaultArchitecture(), BB->GetDisassemblyText(new DisassemblySettings()).back().addr);
+			}
+		}
+	}
+}
+
+// C++ Plugin的Patch和Python的不太一样
+// C++插件Patch应该是等我们的代码运行完之后,BinaryNinja才开始重新分析,所以不需要最后一起Patch
+// Python的应该是边Patch边分析,所以有时候会报错这样
+void Solve_All(std::vector<uint64_t> DebugFunctionList) {
+	/*for (int i = 0; i < 10; i++) {
+		Solve_CallPop(DebugFunctionList);
+		Solve_Push_Ret(DebugFunctionList);
+		Solve_Unreachable_Jcc(DebugFunctionList);
+		Solve_Call_ConstantPtr(DebugFunctionList);
+		Solve_Jmp_ConstantPtr_myalgo(DebugFunctionList);
+		g_bv->UpdateAnalysisAndWait();  // 这样好像是没用的,因为你代码不跑完他没机会重新分析,调也没用
+	}*/
+	
+	// C++没有Python那种current_address,只能这样代替下方便测试单个函数
+	//uint64_t addr = UtilsGetAddressInput();
+	//DebugFunctionList.push_back(addr);
+
+	Solve_CallPop(DebugFunctionList);
+	Solve_Push_Ret(DebugFunctionList);
+	Solve_Unreachable_Jcc(DebugFunctionList);
+	Solve_Call_ConstantPtr(DebugFunctionList);
+	Solve_Jmp_ConstantPtr_myalgo(DebugFunctionList);
 }

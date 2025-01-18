@@ -30,19 +30,20 @@ extern "C"
 	{ 
 		// [Default] This plugin was built for a newer version of Binary Ninja (XX). 
 		// Please update Binary Ninja or rebuild the plugin with the matching API version (XX).
-
 		BINARYNINJAPLUGIN uint32_t CorePluginABIVersion() {  
-			return 87;
+			// git pull origin dev
+			return BN_CURRENT_CORE_ABI_VERSION;
 		} 
 	}
 
 	BINARYNINJAPLUGIN bool CorePluginInit() 
 	{
-		EasyRegisterWrapper(Solve_CallPop, "Solve_CallPop", {  });
-		EasyRegisterWrapper(Solve_Push_Ret, "Solve_Push_Ret", {  });
-		EasyRegisterWrapper(Solve_Call_ConstantPtr, "Solve_Call_ConstantPtr", {  });
-		EasyRegisterWrapper(Solve_Jmp_ConstantPtr_myalgo, "Solve_Jmp_ConstantPtr_myalgo", {  });
-
+		//EasyRegisterWrapper(Solve_CallPop, "Solve_CallPop", {  });
+		//EasyRegisterWrapper(Solve_Push_Ret, "Solve_Push_Ret", {  });
+		//EasyRegisterWrapper(Solve_Call_ConstantPtr, "Solve_Call_ConstantPtr", {  });
+		//EasyRegisterWrapper(Solve_Jmp_ConstantPtr_myalgo, "Solve_Jmp_ConstantPtr_myalgo", {  });
+		//EasyRegisterWrapper(Solve_Unreachable_Jcc, "Solve_Unreachable_Jcc", {  });
+		EasyRegisterWrapper(Solve_All, "Solve_All", { });
 
 		PluginCommand::Register("CFGLink Test", "", [](BinaryView* bv) {
 			g_bv = bv;
