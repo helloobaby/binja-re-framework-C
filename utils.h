@@ -20,6 +20,7 @@ std::string hex(DataBuffer Buffer);
 void UtilsShowTraceStack(char* szBriefInfo /*= NULL*/);
 
 // 主要是利用短跳转来减少Patch需要使用的字节数
+// "short" 或 "near"
 std::string UtilsGetJmpType(uint64_t BaseAddress,uint64_t DestAddress);
 
 // 打印Lowlevel IL,用来辅助调试
