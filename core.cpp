@@ -1,7 +1,4 @@
-#include "core.h"
-#include "utils.h"
-#include <lowlevelilinstruction.h>
-
+#include "stdafx.h"
 
 BinaryView* g_bv;
 

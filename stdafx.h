@@ -1,0 +1,9 @@
+#include "../core.h"
+#include "binaryninjaapi.h"
+#include <lowlevelilinstruction.h>
+#include <mediumlevelilinstruction.h>
+#include "../utils.h"
+#include "include/magic_enum/magic_enum.hpp"
+#include <exception>
+#include <dbghelp.h>
+#include <vector>

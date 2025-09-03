@@ -36,7 +36,12 @@ find_path(
 )
 add_subdirectory(${BN_API_PATH} api)
 
-add_library(${PROJECT_NAME} SHARED main.cpp core.cpp core.h utils.h utils.cpp examples.h)
+add_library(${PROJECT_NAME} SHARED 
+main.cpp core.cpp core.h 
+utils.h utils.cpp examples/example1.h 
+internal.cpp internal.h
+stdafx.h
+)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC binaryninjaapi)
 

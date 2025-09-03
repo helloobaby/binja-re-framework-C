@@ -1,10 +1,5 @@
-#include "utils.h"
-#include <lowlevelilinstruction.h>
-#include <optional>
+#include "stdafx.h"
 #include <iomanip>
-#include <dbghelp.h>
-#include <stdio.h>
-#include "include/magic_enum/magic_enum.hpp"
 #pragma comment(lib,"DbgHelp.Lib")
 
 uint64_t UtilsGetAddressInput() {
@@ -137,13 +132,18 @@ void UtilsDumpLowlevelIl(const LowLevelILInstruction& instr, int depth) {
 	return;
 }
 
-void EasyRegisterWrapper(std::function<void(std::vector<uint64_t> DebugFunctionList)> f, std::string name, std::vector<uint64_t> DebugFunctionList) {
-	PluginCommand::Register(name, "", [=](BinaryView* bv) {
+void EasyRegisterWrapper(std::function<void(const DebugFuncList&)> f,
+	const std::string& name,
+	DebugFuncList funcs)
+{
+	PluginCommand::Register(name, "", [f = std::move(f), funcs = std::move(funcs)](BinaryView* bv) {
 		g_bv = bv;
+		LogToFile(DebugLog, "binjareframework-debug.log");
 		LogToFile(InfoLog, "binjareframework-info.log");
 		LogToFile(ErrorLog, "binjareframework-error.log");
+
 		try {
-			f(DebugFunctionList);
+			f(funcs);
 		}
 		catch (const std::exception& e) {
 			LogError("Exception : %s", e.what());

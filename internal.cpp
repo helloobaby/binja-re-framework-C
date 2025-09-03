@@ -1,16 +1,8 @@
-#include "Internal.h"
-#include "core.h"
-#include "binaryninjaapi.h"
-#include <lowlevelilinstruction.h>
-#include <mediumlevelilinstruction.h>
-#include "utils.h"
-#include "include/magic_enum/magic_enum.hpp"
-#include <exception>
-#include <dbghelp.h>
-#include <vector>
+#include "stdafx.h"
+
 namespace internal {
 	void Init() {
-		PluginCommand::Register("[DEBUG] Print DisassemblyText Token For Address", "", [](BinaryView* bv) {
+		PluginCommand::Register("[DEBUG] Print DisassemblyText Token Details For Address", "", [](BinaryView* bv) {
 			g_bv = bv;
 
 			uint64_t Result;
@@ -22,7 +14,7 @@ namespace internal {
 			}
 		);
 
-		PluginCommand::Register("[DEBUG] Print LowLevel IL For Address", "", [](BinaryView* bv) {
+		PluginCommand::Register("[DEBUG] Print LowLevel IL Details For Address", "", [](BinaryView* bv) {
 			try {
 				g_bv = bv;
 
@@ -60,7 +52,7 @@ namespace internal {
 				UtilsShowTraceStack(nullptr);
 			}});
 
-			PluginCommand::Register("CFGLink Test", "", [](BinaryView* bv) {
+			PluginCommand::Register("[DEBUG] CFGLink Test", "", [](BinaryView* bv) {
 				g_bv = bv;
 				try {
 					uint64_t Result;

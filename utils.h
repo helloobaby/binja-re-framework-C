@@ -27,5 +27,8 @@ std::string UtilsGetJmpType(uint64_t BaseAddress,uint64_t DestAddress);
 void UtilsDumpLowlevelIl(const LowLevelILInstruction& instr, int depth);
 
 // Example Usage: 
-// EasyRegisterWrapper(Solve_All, "Solve_All", {  });
-void EasyRegisterWrapper(std::function<void(std::vector<uint64_t> DebugFunctionList)> f, std::string name, std::vector<uint64_t> DebugFunctionList);
+// EasyRegisterWrapper(Run, "Run", { 0x401000 });
+using DebugFuncList = std::vector<uint64_t>;
+void EasyRegisterWrapper(std::function<void(const DebugFuncList&)> f,
+	const std::string& name,
+	DebugFuncList funcs);
